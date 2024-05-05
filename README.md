@@ -1,2 +1,4 @@
-# Resume-Scanner
-AI based resume scanning website to enhance and create an ATS friendly resume
+# Vendor Management System with Performance Metrics
+A Vendor Management System using Django and Django REST Framework. This
+system will handle vendor profiles, track purchase orders, and calculate vendor performance
+metrics.
