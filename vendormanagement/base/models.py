@@ -22,7 +22,7 @@ class PurchaseOrder(models.Model):
     items = models.JSONField()
     quantity = models.IntegerField()
     status = models.CharField(max_length=20)
-    quality_rating = models.FloatField()
+    quality_rating = models.FloatField(null=True)
     issue_date = models.DateTimeField()
     acknowledgement_date = models.DateTimeField()
 
