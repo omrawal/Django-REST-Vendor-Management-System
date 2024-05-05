@@ -3,6 +3,7 @@ from rest_framework.decorators import api_view
 from base.models import Vendor, PurchaseOrder, HistoricalPerformance
 from .serializers import VendorSerializer, PurchaseOrderSerializer, HistoricalPerformanceSerializer
 from rest_framework import status
+from datetime import datetime,timedelta
 
 
 @api_view(['GET', 'POST'])
@@ -55,6 +56,64 @@ def get_vendor_by_id(request, vendor_id):
         return Response(status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
 
+def update_on_time_delivery_rate(request_data):
+    delivery_date = request_data['delivery_date']
+    vendor_id = request_data['vendor']
+    try:
+        # Convert delivery_date string to a date object
+        delivery_date = datetime.strptime(delivery_date, '%Y-%m-%d  %H:%M:%S')
+    except ValueError:
+        return Response({'error': 'Invalid delivery date format (YYYY-MM-DD HH:MM:SS expected).' + delivery_date},
+                        status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        # Filter completed POs for the vendor
+        completed_pos = PurchaseOrder.objects.filter(status='completed', delivery_date__lte=delivery_date
+                                                     ).count()
+
+        # Count total completed POs for the vendor (regardless of delivery date)
+        total_completed_pos = PurchaseOrder.objects.filter(vendor=vendor_id, status='completed').count()
+        print('completed_pos', completed_pos)
+        print('total_completed_pos', total_completed_pos)
+        if total_completed_pos == 0:
+            # No completed POs for the vendor, so completion rate is 0
+            on_time_delivery_rate = 0.0
+        else:
+            on_time_delivery_rate = completed_pos / total_completed_pos
+
+        return Response({'on_time_delivery_rate': on_time_delivery_rate},status=status.HTTP_201_CREATED)
+
+    except PurchaseOrder.DoesNotExist:
+        return Response({'error': 'Vendor not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+
+def update_quality_rating(data):
+    vendor = data['vendor']
+    completed_pos = PurchaseOrder.objects.filter(vendor=vendor, status='completed')
+    total_ratings = sum(po.quality_rating for po in completed_pos if po.quality_rating is not None)
+    average_rating = total_ratings / len(completed_pos) if completed_pos else 0.0  # Handle division by zero
+    return average_rating
+
+
+def update_average_response_time(data):
+    vendor = data['vendor']
+    completed_pos = PurchaseOrder.objects.filter(vendor=vendor, acknowledgement_date__isnull=False)
+    total_response_time = timedelta(seconds=0)
+    for obj in completed_pos:
+        total_response_time += (obj.acknowledgement_date - obj.issue_date)
+    average_response_time = total_response_time / len(completed_pos) if completed_pos else timedelta(seconds=0)
+    return average_response_time
+
+
+def update_fulfillment_rate(data):
+    vendor = data['vendor']
+    completed_pos = PurchaseOrder.objects.filter(vendor=vendor, status='completed', issue_date__isnull=False)
+    total_pos = PurchaseOrder.objects.filter(vendor=vendor)
+    fulfilled_pos = len(completed_pos)
+    fulfillment_rate = fulfilled_pos / len(total_pos) if total_pos else 0.0  # Handle division by zero
+    return fulfillment_rate
+
+
 @api_view(['GET', 'POST'])
 def purchase_order_ops(request):
     if request.method == 'GET':
@@ -65,13 +124,63 @@ def purchase_order_ops(request):
         serializer = PurchaseOrderSerializer(data=request.data)
         if serializer.is_valid():
             serializer.save()
+            # TODO Performance metrics update
+            # 1. on_time_delivery_rate
+            print('request.data', request.data)
+            on_time_delivery_rate = None
+            quality_rating = None
+            if request.data['status'].lower() == 'completed':
+                update_on_time_delivery_rate_response = update_on_time_delivery_rate(request.data)
+                if 'on_time_delivery_rate' not in update_on_time_delivery_rate_response.data:
+                    print("on_time_delivery_rate NOT found", update_on_time_delivery_rate_response.data)
+                    return update_on_time_delivery_rate_response
+                else:
+                    on_time_delivery_rate = update_on_time_delivery_rate_response.data['on_time_delivery_rate']
+                    print('on_time_delivery_rate', on_time_delivery_rate)
+                    vendor = Vendor.objects.get(pk=request.data['vendor'])
+                    vendor.on_time_delivery_rate = on_time_delivery_rate
+                    vendor.save()
+                    # 2. quality_rating_avg
+                    quality_rating = update_quality_rating(request.data)
+                    print('quality_rating',quality_rating)
+                    vendor = Vendor.objects.get(pk=request.data['vendor'])
+                    vendor.quality_rating_avg = quality_rating
+                    vendor.save()
+            # 3. average_response_time
+            average_response_time = update_average_response_time(request.data)
+            print('average_response_time', average_response_time)
+            vendor = Vendor.objects.get(pk=request.data['vendor'])
+            vendor.average_response_time = average_response_time.total_seconds() / 3600
+            vendor.save()
+            # 4. fulfillment_rate
+            fulfillment_rate = update_fulfillment_rate(request.data)
+            print('fulfillment_rate', fulfillment_rate)
+            vendor = Vendor.objects.get(pk=request.data['vendor'])
+            vendor.fulfillment_rate = fulfillment_rate
+            vendor.save()
+            if all ([on_time_delivery_rate, quality_rating,average_response_time,fulfillment_rate]):
+                # Saving historical performance
+                vendor = request.data['vendor']
+                # Create and save the HistoricalPerformance object
+                historical_performance = HistoricalPerformance.objects.create(
+                    vendor=Vendor.objects.get(pk=request.data['vendor']),
+                    date=datetime.now(),  # Use current date and time
+                    on_time_delivery_rate=on_time_delivery_rate,
+                    quality_rating_avg=quality_rating,
+                    average_response_time=average_response_time.total_seconds() / 3600,  # Convert timedelta to hours
+                    fulfillment_rate=fulfillment_rate
+                )
+                # Save the object (automatic on creation, but explicit for clarity)
+                historical_performance.save()
+
             return Response(serializer.data)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     else:
         return Response(status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
-@api_view(['GET','PUT','DELETE'])
+
+@api_view(['GET', 'PUT', 'DELETE'])
 def get_po_by_id(request, po_id):
     if request.method == 'GET':
         try:
@@ -90,6 +199,51 @@ def get_po_by_id(request, po_id):
         serializer = PurchaseOrderSerializer(purchase_order, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
+            on_time_delivery_rate = None
+            quality_rating = None
+            if request.data['status'].lower() == 'completed':
+                update_on_time_delivery_rate_response = update_on_time_delivery_rate(request.data)
+                if 'on_time_delivery_rate' not in update_on_time_delivery_rate_response.data:
+                    print("on_time_delivery_rate NOT found", update_on_time_delivery_rate_response.data)
+                    return update_on_time_delivery_rate_response
+                else:
+                    on_time_delivery_rate = update_on_time_delivery_rate_response.data['on_time_delivery_rate']
+                    print('on_time_delivery_rate', on_time_delivery_rate)
+                    vendor = Vendor.objects.get(pk=request.data['vendor'])
+                    vendor.on_time_delivery_rate = on_time_delivery_rate
+                    vendor.save()
+                    # 2. quality_rating_avg
+                    quality_rating = update_quality_rating(request.data)
+                    print('quality_rating', quality_rating)
+                    vendor = Vendor.objects.get(pk=request.data['vendor'])
+                    vendor.quality_rating_avg = quality_rating
+                    vendor.save()
+            # 3. average_response_time
+            average_response_time = update_average_response_time(request.data)
+            print('average_response_time', average_response_time)
+            vendor = Vendor.objects.get(pk=request.data['vendor'])
+            vendor.average_response_time = average_response_time.total_seconds() / 3600
+            vendor.save()
+            # 4. fulfillment_rate
+            fulfillment_rate = update_fulfillment_rate(request.data)
+            print('fulfillment_rate', fulfillment_rate)
+            vendor = Vendor.objects.get(pk=request.data['vendor'])
+            vendor.fulfillment_rate = fulfillment_rate
+            vendor.save()
+            if all([on_time_delivery_rate, quality_rating, average_response_time, fulfillment_rate]):
+                # Saving historical performance
+                vendor = request.data['vendor']
+                # Create and save the HistoricalPerformance object
+                historical_performance = HistoricalPerformance.objects.create(
+                    vendor=Vendor.objects.get(pk=request.data['vendor']),
+                    date=datetime.now(),  # Use current date and time
+                    on_time_delivery_rate=on_time_delivery_rate,
+                    quality_rating_avg=quality_rating,
+                    average_response_time=average_response_time.total_seconds() / 3600,  # Convert timedelta to hours
+                    fulfillment_rate=fulfillment_rate
+                )
+                # Save the object (automatic on creation, but explicit for clarity)
+                historical_performance.save()
             return Response(serializer.data)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
