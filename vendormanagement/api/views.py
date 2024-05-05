@@ -22,7 +22,7 @@ def vendor_ops(request):
         return Response(status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
 
-@api_view(['GET','PUT','DELETE'])
+@api_view(['GET', 'PUT', 'DELETE'])
 def get_vendor_by_id(request, vendor_id):
     if request.method == 'GET':
         try:
@@ -54,4 +54,51 @@ def get_vendor_by_id(request, vendor_id):
     else:
         return Response(status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
-#
+
+@api_view(['GET', 'POST'])
+def purchase_order_ops(request):
+    if request.method == 'GET':
+        purchase_orders = PurchaseOrder.objects.all()
+        serializer = PurchaseOrderSerializer(purchase_orders, many=True)
+        return Response(serializer.data)
+    elif request.method == 'POST':
+        serializer = PurchaseOrderSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        else:
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    else:
+        return Response(status=status.HTTP_405_METHOD_NOT_ALLOWED)
+
+@api_view(['GET','PUT','DELETE'])
+def get_po_by_id(request, po_id):
+    if request.method == 'GET':
+        try:
+            purchase_order = PurchaseOrder.objects.get(pk=po_id)
+        except PurchaseOrder.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+
+        serializer = PurchaseOrderSerializer(purchase_order)
+        return Response(serializer.data)
+    elif request.method == 'PUT':
+        try:
+            purchase_order = PurchaseOrder.objects.get(pk=po_id)
+        except PurchaseOrder.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+
+        serializer = PurchaseOrderSerializer(purchase_order, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        else:
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    elif request.method == 'DELETE':
+        try:
+            purchase_order = PurchaseOrder.objects.get(pk=po_id)
+            purchase_order.delete()
+            return Response({'message': 'Purchase Order deleted successfully.'})
+        except PurchaseOrder.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+    else:
+        return Response(status=status.HTTP_405_METHOD_NOT_ALLOWED)
