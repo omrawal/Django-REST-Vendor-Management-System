@@ -4,7 +4,8 @@ This is a well-structured Django application designed to streamline your develop
 
 ## Prerequisites
 
-Python 3.7.6 or higher (latest recommended): Install it from https://www.python.org/downloads/.
+Python 3.7.6 or higher (latest recommended): Install it from https://www.python.org/downloads/. 
+
 Git version control system: Download and install it from https://git-scm.com/downloads.
 ## Installation
 
@@ -54,32 +55,33 @@ vendormanagement/\
 
 1. Setting up the database:
 
-Using the default database so no setup is needed
+  Using the default database so no setup is needed
+
 2. Running migrations:
 
-Apply database schema changes from your app's models to the actual database:
+  Apply database schema changes from your app's models to the actual database:
 
-Bash\
-`python manage.py makemigrations`\
-`python manage.py migrate`
+  Bash\
+  `python manage.py makemigrations`\
+  `python manage.py migrate`
 
 3. Starting the development server:
 
-Launch the Django development server:
+  Launch the Django development server:
+  
+  Bash\
+  `python manage.py runserver`
 
-Bash\
-`python manage.py runserver`
-
-This will start the server, typically at http://127.0.0.1:8000/.
+  This will start the server, typically at http://127.0.0.1:8000/.
 
 4. Administrative interface:
 
-Access the Django admin interface at http://127.0.0.1:8000/admin/.
+  Access the Django admin interface at http://127.0.0.1:8000/admin/.
 
-You'll need to create a superuser account first using:
+  You'll need to create a superuser account first using:
 
-Bash\
-`python manage.py createsuperuser`
+  Bash\
+  `python manage.py createsuperuser`
 
 ## Testing
 
